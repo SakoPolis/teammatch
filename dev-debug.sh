@@ -10,6 +10,15 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  export DATABASE_URL="sqlite:///$BACKEND_DIR/test_notifications.db"
+fi
+export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+export POSTGRES_USER="${POSTGRES_USER:-teammatch}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-teammatch}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+export POSTGRES_DB="${POSTGRES_DB:-teammatch}"
+
 if ! command -v npm >/dev/null 2>&1; then
   echo "Error: npm is required but not found in PATH."
   exit 1
@@ -24,16 +33,46 @@ else
   exit 1
 fi
 
-if ! "$PYTHON_BIN" -m uvicorn --version >/dev/null 2>&1; then
-  echo "Error: uvicorn is not available in the current Python environment."
-  echo "Install backend deps first (example):"
-  echo "  cd $BACKEND_DIR && $PYTHON_BIN -m pip install -r requirements.txt"
+BACKEND_PYTHON="$PYTHON_BIN"
+if [[ -x "$BACKEND_DIR/.venv/bin/python" ]]; then
+  BACKEND_PYTHON="$BACKEND_DIR/.venv/bin/python"
+fi
+
+if ! "$BACKEND_PYTHON" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  if [[ "$BACKEND_PYTHON" == "$PYTHON_BIN" ]]; then
+    echo "Backend dependencies missing. Creating local virtual environment..."
+    (
+      cd "$BACKEND_DIR"
+      "$PYTHON_BIN" -m venv .venv
+    )
+    BACKEND_PYTHON="$BACKEND_DIR/.venv/bin/python"
+  fi
+
+  echo "Installing backend dependencies into local virtual environment..."
+  (
+    cd "$BACKEND_DIR"
+    "$BACKEND_PYTHON" -m pip install -r requirements.txt
+  )
+fi
+
+if ! "$BACKEND_PYTHON" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  echo "Error: fastapi/uvicorn are still unavailable in the current Python environment."
+  echo "Try running manually: cd $BACKEND_DIR && $BACKEND_PYTHON -m pip install -r requirements.txt"
   exit 1
 fi
 
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-  echo "Warning: frontend node_modules directory not found."
-  echo "Run: cd $FRONTEND_DIR && npm install"
+  echo "Frontend dependencies not found. Installing with npm..."
+  (
+    cd "$FRONTEND_DIR"
+    npm install
+  )
+fi
+
+if [[ ! -x "$FRONTEND_DIR/node_modules/.bin/next" ]]; then
+  echo "Error: Next.js CLI was not found after install attempt."
+  echo "Try running manually: cd $FRONTEND_DIR && npm install"
+  exit 1
 fi
 
 BACKEND_PID=""
@@ -62,7 +101,7 @@ echo "Frontend: http://localhost:$FRONTEND_PORT"
 
 (
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -m uvicorn app.main:app \
+  "$BACKEND_PYTHON" -m uvicorn app.main:app \
     --reload \
     --host "$BACKEND_HOST" \
     --port "$BACKEND_PORT" \
