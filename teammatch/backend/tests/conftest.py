@@ -14,8 +14,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import get_db
+from app.core.database import Base
 from app.main import app
-from app.models.notification import Notification
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_notifications.db"
 engine = create_engine(
@@ -38,9 +38,9 @@ app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture(autouse=True)
 def setup_test_db():
-    Notification.__table__.create(bind=engine, checkfirst=True)
+    Base.metadata.create_all(bind=engine)
     yield
-    Notification.__table__.drop(bind=engine, checkfirst=True)
+    Base.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture
